@@ -1,67 +1,53 @@
 import pandas as pd
-import yfinance as yf
 import numpy as np
-import datetime
-import plotly.graph_objects as go
+import yfinance as yf
+import matplotlib.pyplot as plt
 
-# Define index components (Sample Stocks & Weights)
-index_components = {
-    "AAPL": 0.3,  # Apple - 30%
-    "MSFT": 0.3,  # Microsoft - 30%
-    "GOOGL": 0.2,  # Google - 20%
-    "AMZN": 0.2   # Amazon - 20%
-}
+# Fetch historical bond yield data (Example: US 10-Year Treasury Bond)
+bond_ticker = "^TNX"  # US 10-Year Treasury Yield
+data = yf.download(bond_ticker, start="2023-01-01", end="2024-01-01")
 
-# Define date range (Past 1 Year)
-start_date = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
-end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+if data.empty:
+    print("No data fetched. Please check the ticker or date range.")
+    exit()
 
-# Fetch historical stock price data (including Adjusted Close)
-data = yf.download(list(index_components.keys()), start=start_date, end=end_date, auto_adjust=False)
+# Inspect the data to ensure proper values
+print(data.head())  # Check if 'Close' values are in percentage points
 
-# Use Adjusted Close prices
-adj_close_data = data['Adj Close']
+# Calculate daily returns for yield movements
+data['Daily Return'] = data['Close'].pct_change()
+data.dropna(inplace=True)
 
-# Handle missing values (Forward-fill)
-adj_close_data.fillna(method='ffill', inplace=True)
+# Calculate Key Fixed Income Metrics
+def calculate_metrics(data):
+    # Average yield (already in percentage points, no need to multiply by 100)
+    avg_yield = data['Close'].mean()
+    # Convert to float in case it's a Series
+    avg_yield = float(avg_yield)
+    
+    # Volatility of daily returns (standard deviation)
+    yield_volatility = data['Daily Return'].std()
+    yield_volatility = float(yield_volatility)
+    
+    # Value at Risk (VaR) at 95% confidence level
+    var_95 = np.percentile(data['Daily Return'], 5)
+    
+    return avg_yield, yield_volatility, var_95
 
-# Normalize prices to start from 100 (Base value)
-normalized_data = adj_close_data / adj_close_data.iloc[0] * 100
+avg_yield, yield_volatility, var_95 = calculate_metrics(data)
 
-# Calculate Weighted Index
-index_values = (normalized_data * pd.Series(index_components)).sum(axis=1)
+# Visualizing Bond Yield Movements
+plt.figure(figsize=(10, 5))
+plt.plot(data.index, data['Close'], label='US 10Y Treasury Yield', color='blue')
+plt.xlabel("Date")
+plt.ylabel("Yield (%)")
+plt.title("US 10-Year Treasury Yield Trends")
+plt.legend()
+plt.grid()
+plt.show()
 
-# Create DataFrame for Index Summary
-index_summary = pd.DataFrame({
-    'Date': index_values.index,
-    'Index Value': index_values.values
-})
-index_summary.set_index('Date', inplace=True)
+# Output the results
+print(f"Average Yield: {avg_yield:.2f}%")
+print(f"Yield Volatility: {yield_volatility * 100:.2f}%")
+print(f"Value at Risk (95% Confidence): {var_95 * 100:.2f}%")
 
-# Save Index Summary as CSV
-index_summary.to_csv("index_summary.csv")
-print("Index Summary saved as 'index_summary.csv'. Open the file to view the data.")
-
-# Plot the Index Performance Over Time using Plotly
-fig = go.Figure()
-
-fig.add_trace(go.Scatter(
-    x=index_summary.index,
-    y=index_summary["Index Value"],
-    mode='lines',
-    name='Index Performance'
-))
-
-# Add range slider for interactivity
-fig.update_layout(
-    title="Index Performance Over Time",
-    xaxis_title="Date",
-    yaxis_title="Index Value",
-    xaxis=dict(
-        rangeslider=dict(visible=True),  # Enable range slider
-        type="date"
-    ),
-    template="plotly_white"
-)
-
-fig.show()
