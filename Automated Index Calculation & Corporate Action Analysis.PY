@@ -2,7 +2,7 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 import datetime
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # Define index components (Sample Stocks & Weights)
 index_components = {
@@ -16,14 +16,17 @@ index_components = {
 start_date = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
 end_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
-# Fetch historical stock price data
-data = yf.download(list(index_components.keys()), start=start_date, end=end_date)['Adj Close']
+# Fetch historical stock price data (including Adjusted Close)
+data = yf.download(list(index_components.keys()), start=start_date, end=end_date, auto_adjust=False)
+
+# Use Adjusted Close prices
+adj_close_data = data['Adj Close']
 
 # Handle missing values (Forward-fill)
-data.fillna(method='ffill', inplace=True)
+adj_close_data.fillna(method='ffill', inplace=True)
 
 # Normalize prices to start from 100 (Base value)
-normalized_data = data / data.iloc[0] * 100
+normalized_data = adj_close_data / adj_close_data.iloc[0] * 100
 
 # Calculate Weighted Index
 index_values = (normalized_data * pd.Series(index_components)).sum(axis=1)
@@ -39,30 +42,26 @@ index_summary.set_index('Date', inplace=True)
 index_summary.to_csv("index_summary.csv")
 print("Index Summary saved as 'index_summary.csv'. Open the file to view the data.")
 
-# Fetch corporate actions (Dividends & Stock Splits)
-corporate_actions = {}
-for ticker in index_components.keys():
-    stock = yf.Ticker(ticker)
-    splits = stock.splits
-    dividends = stock.dividends
+# Plot the Index Performance Over Time using Plotly
+fig = go.Figure()
 
-    corporate_actions[ticker] = {
-        "Stock Splits": splits if not splits.empty else "No splits recorded",
-        "Dividends": dividends if not dividends.empty else "No dividends recorded"
-    }
+fig.add_trace(go.Scatter(
+    x=index_summary.index,
+    y=index_summary["Index Value"],
+    mode='lines',
+    name='Index Performance'
+))
 
-# Print Corporate Actions for review
-for ticker, actions in corporate_actions.items():
-    print(f"\nCorporate Actions for {ticker}:")
-    print("Stock Splits:\n", actions["Stock Splits"])
-    print("Dividends:\n", actions["Dividends"])
+# Add range slider for interactivity
+fig.update_layout(
+    title="Index Performance Over Time",
+    xaxis_title="Date",
+    yaxis_title="Index Value",
+    xaxis=dict(
+        rangeslider=dict(visible=True),  # Enable range slider
+        type="date"
+    ),
+    template="plotly_white"
+)
 
-# Plot the Index Performance Over Time
-plt.figure(figsize=(12, 6))
-plt.plot(index_summary.index, index_summary["Index Value"], label="Index Performance", linewidth=2, color='blue')
-plt.xlabel("Date")
-plt.ylabel("Index Value")
-plt.title("Index Performance Over Time")
-plt.legend()
-plt.grid()
-plt.show()
+fig.show()
